@@ -1,0 +1,5 @@
+# Frontend has its own repo
+frontend/
+
+# Root-level dependencies
+node_modules/
