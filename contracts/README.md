@@ -1,57 +1,215 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# DMpay.eth — Protocol
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+> On-chain contracts powering the DMpay.eth paid messaging protocol on Ethereum mainnet.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+**Frontend:** [app.dmpay.me](https://app.dmpay.me) · [DMpay-Frontend](https://github.com/RWA-ID/DMpay-Frontend)
 
-## Project Overview
+---
 
-This example project includes:
+## Overview
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+DMpay.eth is a decentralised paid direct messaging protocol. Users register profiles on-chain, set a USDC price for receiving messages, and senders pay that price to open a conversation. The protocol integrates with ENS for identity (subdomains under `dmpay.eth`) and XMTP for end-to-end encrypted messaging.
 
-## Usage
+All funds flow directly between sender and recipient — DMpay takes a 2.5% protocol fee, the remaining 97.5% goes to the recipient. No custody, no intermediaries.
 
-### Running Tests
+---
 
-To run all the tests in the project, execute the following command:
+## Contracts
 
-```shell
+### DMPayRegistry
+
+Manages user profiles and ENS subdomain registration.
+
+**Mainnet:** `0x58d02e17bdCf0fdae2e134Da280e6084552F76f5`
+
+Key functions:
+
+```solidity
+// Register a new profile with an ENS handle and USDC price
+function registerProfile(string calldata handle, uint256 price) external
+
+// Update the IPFS contenthash for your ENS subdomain
+function updateIPFSHash(bytes calldata contenthash) external
+
+// Look up a profile by handle
+function getProfile(string calldata handle) external view returns (Profile memory)
+
+// Look up a profile by wallet address
+function getProfileByWallet(address wallet) external view returns (Profile memory)
+```
+
+On registration, the contract:
+1. Creates an ENS subdomain `handle.dmpay.eth` via the ENS registry
+2. Sets the resolver to the ENS Public Resolver
+3. Sets the ETH address record on the resolver
+
+After IPFS pinning, `updateIPFSHash` sets the ENS contenthash, enabling `handle.dmpay.eth` to resolve to a personalised IPFS profile page.
+
+---
+
+### DMPayMessaging
+
+Handles pay-to-message payments in USDC.
+
+**Mainnet:** `0x588C943Bd4f59888B2F6ECA0b2BfB123B57b0a10`
+
+Key functions:
+
+```solidity
+// Open a paid conversation (sender pays recipient's price in USDC)
+// Requires prior USDC approval for this contract
+function openConversation(address recipient) external
+
+// Check if a conversation between sender and recipient is open
+function isConversationOpen(address sender, address recipient) external view returns (bool)
+```
+
+Payment flow:
+- Sender calls `openConversation(recipient)` after approving USDC
+- Contract reads recipient's price from `DMPayRegistry`
+- 2.5% fee sent to protocol treasury
+- 97.5% sent directly to recipient
+- Conversation flagged as open on-chain
+
+---
+
+## Deployments
+
+### Mainnet
+
+| Contract | Address |
+|---|---|
+| DMPayRegistry | `0x58d02e17bdCf0fdae2e134Da280e6084552F76f5` |
+| DMPayMessaging | `0x588C943Bd4f59888B2F6ECA0b2BfB123B57b0a10` |
+| ENS: dmpay.eth node | `0x2059bd34c28c7a6645dd35be7e5dcc4b3e4999849bbe8b2c8b838f2d4cfc3ec8` |
+| ENS Public Resolver | `0xF29100983E058B709F3D539b0c765937B804AC15` |
+| USDC | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
+
+### Sepolia (Testnet)
+
+| Contract | Address |
+|---|---|
+| DMPayRegistry | *(deploy via Ignition — see below)* |
+| DMPayMessaging | *(deploy via Ignition — see below)* |
+| MockUSDC | Deploy `MockUSDC` first for testing |
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- An Ethereum RPC URL (Alchemy or Infura recommended)
+- A funded deployer wallet private key
+
+### Install
+
+```bash
+git clone https://github.com/RWA-ID/DMpay-Protocol.git
+cd DMpay-Protocol/contracts
+npm install
+```
+
+### Environment Variables
+
+Create a `.env` file inside `contracts/`:
+
+```env
+MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/your_key
+SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/your_key
+PRIVATE_KEY=your_deployer_private_key
+ETHERSCAN_API_KEY=your_etherscan_key
+```
+
+### Compile
+
+```bash
+npx hardhat compile
+```
+
+### Test
+
+```bash
 npx hardhat test
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
+### Deploy to Sepolia
 
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
+```bash
+npx hardhat ignition deploy ignition/modules/DMPay.ts --network sepolia
 ```
 
-### Make a deployment to Sepolia
+### Deploy to Mainnet
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
+```bash
+npx hardhat ignition deploy ignition/modules/DMPayMainnet.ts --network mainnet
 ```
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+---
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+## Project Structure
 
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
+```
+contracts/
+├── contracts/
+│   ├── DMPayRegistry.sol        # Profile registry + ENS subdomain manager
+│   └── DMPayMessaging.sol       # Pay-to-message USDC payment handler
+├── ignition/
+│   └── modules/
+│       ├── DMPay.ts             # Sepolia deployment module
+│       └── DMPayMainnet.ts      # Mainnet deployment module
+├── scripts/
+│   └── send-op-tx.ts            # Utility for sending ops transactions
+├── setContenthash.mjs           # Script to manually set ENS contenthash (Sepolia)
+├── setContenthashMainnet.mjs    # Script to manually set ENS contenthash (Mainnet)
+├── setSubdomainContent.mjs      # Script to set subdomain content records
+├── hardhat.config.ts            # Hardhat configuration
+└── test/
+    └── Counter.ts               # Contract tests
 ```
 
-After setting the variable, you can run the deployment with the Sepolia network:
+---
 
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+## Architecture
+
 ```
+Sender                 DMPayMessaging            DMPayRegistry
+  │                         │                        │
+  │── openConversation ────>│                        │
+  │                         │── getProfile ─────────>│
+  │                         │<── price ─────────────-│
+  │                         │                        │
+  │                         │── transferFrom(sender, recipient, 97.5%)
+  │                         │── transferFrom(sender, treasury, 2.5%)
+  │                         │── mark conversation open
+  │<── success ────────────-│                        │
+```
+
+---
+
+## ENS Integration
+
+Each registered user gets a subdomain under `dmpay.eth`:
+
+- **Registry node:** `keccak256(dmpay.eth namehash + keccak256(handle))`
+- **Resolver:** ENS Public Resolver (`0xF29100983E058B709F3D539b0c765937B804AC15`)
+- **Address record:** Set to user's wallet address
+- **Contenthash:** Set to IPFS CIDv1 after profile page is pinned
+
+The `dmpay.eth` parent domain is managed by the DMpay deployer wallet. `DMPayRegistry` is approved via `setApprovalForAll` on the ENS registry, allowing it to create subdomains on behalf of the owner.
+
+---
+
+## Security
+
+- No admin keys for individual user profiles — once registered, only the wallet owner can update their IPFS hash
+- Protocol fee rate is set at deployment and enforced by the immutable smart contract
+- All USDC flows are atomic — payment and conversation-open happen in a single transaction
+- No contract upgradeability — what is deployed is what runs
+
+---
+
+## License
+
+MIT
